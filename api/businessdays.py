@@ -49,7 +49,7 @@ class handler(BaseHTTPRequestHandler):
             resultado = -dias_habiles if es_negativo else dias_habiles
             
             # 6. Devolver el resultado
-            self._send_response(200, {"dias_habiles": resultado})
+            self._send_response(200, {"resultado": resultado})
             
         except Exception as e:
             self._send_response(500, {"error": str(e)})
