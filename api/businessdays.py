@@ -1,28 +1,34 @@
 from http.server import BaseHTTPRequestHandler
-from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta
 import holidays
 import json
 
 class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        # 1. Obtener los parámetros de la URL
-        parsed_path = urlparse(self.path)
-        query = parse_qs(parsed_path.query)
-        
-        start_str = query.get('startDate', [None])[0]
-        end_str = query.get('endDate', [None])[0]
-        
-        # 2. Validar que existan las fechas
-        if not start_str or not end_str:
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": "Faltan los parametros startDate o endDate"}).encode())
-            return
-            
+    
+    # Cambiamos do_GET por do_POST
+    def do_POST(self):
         try:
-            # 3. Tu lógica original intacta
+            # 1. Leer la longitud del cuerpo (body) que nos envían
+            content_length = int(self.headers.get('Content-Length', 0))
+            
+            if content_length == 0:
+                self._send_response(400, {"error": "El cuerpo de la petición está vacío"})
+                return
+                
+            # 2. Leer y decodificar el JSON del cuerpo
+            post_data = self.rfile.read(content_length)
+            body = json.loads(post_data.decode('utf-8'))
+            
+            # 3. Extraer las variables tal como lo hacían tus apps
+            start_str = body.get('startDate')
+            end_str = body.get('endDate')
+            
+            # 4. Validar (si no hay fechas, devolvemos 0 como en tu código original)
+            if not start_str or not end_str:
+                self._send_response(200, {"dias_habiles": 0})
+                return
+            
+            # 5. Tu lógica original matemática intacta
             d1 = datetime.strptime(start_str.split('T')[0], '%Y-%m-%d').date()
             d2 = datetime.strptime(end_str.split('T')[0], '%Y-%m-%d').date()
 
@@ -42,17 +48,24 @@ class handler(BaseHTTPRequestHandler):
 
             resultado = -dias_habiles if es_negativo else dias_habiles
             
-            # 4. Devolver la respuesta en formato JSON
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            # Permitir CORS por si lo consultas desde el frontend
-            self.send_header('Access-Control-Allow-Origin', '*') 
-            self.end_headers()
-            self.wfile.write(json.dumps({"dias_habiles": resultado}).encode())
+            # 6. Devolver el resultado
+            self._send_response(200, {"dias_habiles": resultado})
             
         except Exception as e:
-            # Manejo de errores por si envían fechas con mal formato
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"error": str(e)}).encode())
+            self._send_response(500, {"error": str(e)})
+
+    # Esta función responde a los navegadores/apps si preguntan por permisos (CORS)
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    # Función auxiliar para no repetir código al enviar respuestas
+    def _send_response(self, code, payload):
+        self.send_response(code)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(json.dumps(payload).encode())
