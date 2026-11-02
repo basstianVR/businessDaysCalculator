@@ -3,7 +3,8 @@ from base64 import b64encode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 import json
-import os
+
+JIRA_BASE_URL = "https://cp9.atlassian.net"
 
 FIELD_MAP = {
     "Asset Storage: DAM Folder Structure ★★": "customfield_13240",
@@ -50,8 +51,8 @@ FIELD_MAP = {
 }
 
 
-def _revert_field(issue_key, customfield, original_value, email, token, base_url):
-    url = f"{base_url.rstrip('/')}/rest/api/3/issue/{issue_key}"
+def _revert_field(issue_key, customfield, original_value, email, token):
+    url = f"{JIRA_BASE_URL}/rest/api/3/issue/{issue_key}"
     payload = json.dumps({
         "fields": {
             customfield: {"value": original_value},
@@ -109,13 +110,8 @@ class handler(BaseHTTPRequestHandler):
                 self._send_response(400, {"error": f"Campo desconocido: {field_name}"})
                 return
 
-            base_url = os.environ.get("JIRA_BASE_URL")
-            if not base_url:
-                self._send_response(500, {"error": "Falta la variable de entorno JIRA_BASE_URL"})
-                return
-
             try:
-                _revert_field(issue_key, customfield, original_value, email, token, base_url)
+                _revert_field(issue_key, customfield, original_value, email, token)
             except HTTPError as e:
                 detail = e.read().decode("utf-8", errors="replace")
                 self._send_response(502, {"error": "Error al actualizar Jira", "status": e.code, "detail": detail})
