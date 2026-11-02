@@ -4,3 +4,6 @@ version = "0.1.0"
 dependencies = [
     "holidays"
 ]
+
+[tool.vercel]
+entrypoint = "api.businessdays:handler"

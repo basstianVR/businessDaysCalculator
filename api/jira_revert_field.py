@@ -1,4 +1,3 @@
-from http.server import BaseHTTPRequestHandler
 from base64 import b64encode
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -73,72 +72,45 @@ def _revert_field(issue_key, customfield, original_value, email, token):
         return response.getcode()
 
 
-class handler(BaseHTTPRequestHandler):
+def handle_post(body, send_response):
+    issue_key = body.get("issueKey")
+    field_name = body.get("fieldName")
+    original_value = body.get("originalValue")
+    email = body.get("email")
+    token = body.get("token")
 
-    def do_POST(self):
-        try:
-            content_length = int(self.headers.get("Content-Length", 0))
-            if content_length == 0:
-                self._send_response(400, {"error": "El cuerpo de la petición está vacío"})
-                return
+    missing = [
+        name
+        for name, value in (
+            ("issueKey", issue_key),
+            ("fieldName", field_name),
+            ("originalValue", original_value),
+            ("email", email),
+            ("token", token),
+        )
+        if not value
+    ]
+    if missing:
+        send_response(400, {"error": f"Faltan campos requeridos: {', '.join(missing)}"})
+        return
 
-            body = json.loads(self.rfile.read(content_length).decode("utf-8"))
+    customfield = FIELD_MAP.get(field_name)
+    if not customfield:
+        send_response(400, {"error": f"Campo desconocido: {field_name}"})
+        return
 
-            issue_key = body.get("issueKey")
-            field_name = body.get("fieldName")
-            original_value = body.get("originalValue")
-            email = body.get("email")
-            token = body.get("token")
+    try:
+        _revert_field(issue_key, customfield, original_value, email, token)
+    except HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")
+        send_response(502, {"error": "Error al actualizar Jira", "status": e.code, "detail": detail})
+        return
+    except URLError as e:
+        send_response(502, {"error": f"No se pudo conectar con Jira: {e.reason}"})
+        return
 
-            missing = [
-                name
-                for name, value in (
-                    ("issueKey", issue_key),
-                    ("fieldName", field_name),
-                    ("originalValue", original_value),
-                    ("email", email),
-                    ("token", token),
-                )
-                if not value
-            ]
-            if missing:
-                self._send_response(400, {"error": f"Faltan campos requeridos: {', '.join(missing)}"})
-                return
-
-            customfield = FIELD_MAP.get(field_name)
-            if not customfield:
-                self._send_response(400, {"error": f"Campo desconocido: {field_name}"})
-                return
-
-            try:
-                _revert_field(issue_key, customfield, original_value, email, token)
-            except HTTPError as e:
-                detail = e.read().decode("utf-8", errors="replace")
-                self._send_response(502, {"error": "Error al actualizar Jira", "status": e.code, "detail": detail})
-                return
-            except URLError as e:
-                self._send_response(502, {"error": f"No se pudo conectar con Jira: {e.reason}"})
-                return
-
-            self._send_response(200, {
-                "ok": True,
-                "issueKey": issue_key,
-                "customfield": customfield,
-            })
-
-        except Exception as e:
-            self._send_response(500, {"error": str(e)})
-
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
-        self.end_headers()
-
-    def _send_response(self, code, payload):
-        self.send_response(code)
-        self.send_header("Content-type", "application/json")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.end_headers()
-        self.wfile.write(json.dumps(payload).encode())
+    send_response(200, {
+        "ok": True,
+        "issueKey": issue_key,
+        "customfield": customfield,
+    })
